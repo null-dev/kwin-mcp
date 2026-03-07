@@ -16,7 +16,7 @@ import time
 
 from kwin_mcp.input import InputBackend, MouseButton
 from kwin_mcp.screenshot import capture_frame_burst, capture_screenshot_to_file
-from kwin_mcp.session import Session, SessionConfig
+from kwin_mcp.session import HostSession, Session, SessionConfig
 
 # Install hints for external binaries
 _INSTALL_HINTS: dict[str, str] = {
@@ -54,14 +54,14 @@ class AutomationEngine:
     """
 
     def __init__(self) -> None:
-        self._session: Session | None = None
+        self._session: Session | HostSession | None = None
         self._input: InputBackend | None = None
         self._clipboard_enabled: bool = False
         self._wl_copy_proc: subprocess.Popen[bytes] | None = None
 
     # ── Private helpers ───────────────────────────────────────────────────
 
-    def _get_session(self) -> Session:
+    def _get_session(self) -> Session | HostSession:
         if self._session is None or not self._session.is_running:
             msg = "No active session. Call session_start first."
             raise RuntimeError(msg)
@@ -214,7 +214,7 @@ class AutomationEngine:
         return result
 
     def session_stop(self) -> str:
-        """Stop the isolated KWin session and clean up."""
+        """Stop the active session and clean up."""
         if self._session is None:
             return "No session running."
 
@@ -234,6 +234,53 @@ class AutomationEngine:
         self._session = None
         self._input = None
         return "Session stopped."
+
+    def session_attach(
+        self,
+        app_command: str = "",
+        keep_screenshots: bool = False,
+        env: dict[str, str] | None = None,
+    ) -> str:
+        """Attach to the running host KDE Wayland session.
+
+        Uses DBUS_SESSION_BUS_ADDRESS and WAYLAND_DISPLAY from the current
+        environment to connect to the real KDE session without spawning an
+        isolated compositor.
+        """
+        if self._session is not None and self._session.is_running:
+            return "Session already running. Call session_stop first."
+
+        self._clipboard_enabled = True  # Real session always has a clipboard
+
+        host = HostSession()
+        info = host.start(keep_screenshots=keep_screenshots)
+        self._session = host
+
+        result = f"Attached to host session. Wayland socket: {info.wayland_socket}"
+        if info.dbus_address:
+            result += f"\nD-Bus: {info.dbus_address}"
+
+        if app_command:
+            cmd = shlex.split(app_command)
+            app_info = host.launch_app(cmd, extra_env=env)
+            result += f"\nApp launched: {app_command} (PID={app_info.pid})"
+            result += f"\nApp log: {app_info.log_path}"
+
+        time.sleep(0.5)
+        try:
+            self._input = InputBackend(info.dbus_address)
+        except RuntimeError as exc:
+            self._input = None
+            result += f"\nInput backend unavailable: {exc}"
+            result += (
+                "\nHint: start KDE with KWIN_WAYLAND_NO_PERMISSION_CHECKS=1"
+                " to enable input injection."
+            )
+
+        if self._input:
+            result += "\nInput backend: KWin EIS"
+
+        return result
 
     # ── Screenshot / Accessibility ────────────────────────────────────────
 

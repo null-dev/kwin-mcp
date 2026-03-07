@@ -84,12 +84,51 @@ def session_start(
 
 
 @mcp.tool()
-def session_stop() -> str:
-    """Stop the isolated KWin session and clean up.
+def session_attach(
+    app_command: Annotated[
+        str,
+        Field(
+            description='Command to launch in the host session (e.g. "kcalc"). '
+            "Leave empty to attach without launching an app."
+        ),
+    ] = "",
+    keep_screenshots: Annotated[
+        bool,
+        Field(description="Keep screenshot files after session_stop instead of deleting them."),
+    ] = False,
+    env: Annotated[
+        dict[str, str] | None,
+        Field(description="Extra environment variables to pass to the launched app."),
+    ] = None,
+) -> str:
+    """Attach to the running host KDE Wayland session.
 
-    Terminates KWin, all launched app processes, and the D-Bus session.
-    Cleans up temporary files and clipboard processes. Safe to call when
-    no session is running (returns "No session running.").
+    Connects to the real KDE Plasma session using DBUS_SESSION_BUS_ADDRESS
+    and WAYLAND_DISPLAY from the environment — no isolated compositor is
+    spawned. Use this instead of session_start when you want to interact
+    with the user's actual desktop.
+
+    Requires KDE to have been started with:
+      KWIN_WAYLAND_NO_PERMISSION_CHECKS=1      (for input injection)
+      KWIN_SCREENSHOT_NO_PERMISSION_CHECKS=1   (for fast D-Bus screenshots)
+
+    Call session_stop to detach. KWin and KDE are NOT affected by session_stop.
+    """
+    return _engine.session_attach(
+        app_command=app_command,
+        keep_screenshots=keep_screenshots,
+        env=env,
+    )
+
+
+@mcp.tool()
+def session_stop() -> str:
+    """Stop the active session and clean up.
+
+    For isolated sessions: terminates KWin, all launched app processes,
+    and the D-Bus session. For host sessions: detaches without affecting
+    the running KDE desktop. In both cases, cleans up temporary files.
+    Safe to call when no session is running (returns "No session running.").
     """
     return _engine.session_stop()
 

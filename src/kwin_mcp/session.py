@@ -1,8 +1,8 @@
-"""Isolated KWin Wayland session management.
+"""KWin Wayland session management.
 
-Manages the lifecycle of an isolated KWin Wayland session using
-dbus-run-session + kwin_wayland --virtual for complete isolation
-from the host desktop.
+Provides two session modes:
+- Session: isolated virtual session via dbus-run-session + kwin_wayland --virtual
+- HostSession: attaches to the running host KDE Wayland session
 """
 
 from __future__ import annotations
@@ -415,3 +415,124 @@ wait $KWIN_PID
 
     def __exit__(self, *_: object) -> None:
         self.stop()
+
+
+class HostSession:
+    """Attaches to the running host KDE Wayland session.
+
+    Unlike Session, this does not spawn any processes. It reads
+    DBUS_SESSION_BUS_ADDRESS and WAYLAND_DISPLAY from the current
+    environment and creates a SessionInfo pointing at the real session.
+    """
+
+    def __init__(self) -> None:
+        self._info: SessionInfo | None = None
+        self._app_counter: int = 0
+        self._keep_screenshots: bool = False
+
+    @property
+    def is_running(self) -> bool:
+        return self._info is not None
+
+    @property
+    def info(self) -> SessionInfo | None:
+        return self._info
+
+    @property
+    def wayland_socket(self) -> str:
+        return self._info.wayland_socket if self._info else ""
+
+    def start(self, keep_screenshots: bool = False) -> SessionInfo:
+        """Attach to the host session using the current environment."""
+        if self._info is not None:
+            msg = "Already attached to host session"
+            raise RuntimeError(msg)
+
+        self._keep_screenshots = keep_screenshots
+        dbus_address = os.environ.get("DBUS_SESSION_BUS_ADDRESS", "")
+        wayland_socket = os.environ.get("WAYLAND_DISPLAY", "wayland-0")
+        screenshot_dir = Path(tempfile.mkdtemp(prefix="kwin-mcp-screenshots-"))
+
+        self._info = SessionInfo(
+            dbus_address=dbus_address,
+            wayland_socket=wayland_socket,
+            kwin_pid=0,
+            screenshot_dir=screenshot_dir,
+        )
+        return self._info
+
+    def launch_app(self, command: list[str], extra_env: dict[str, str] | None = None) -> AppInfo:
+        """Launch an application in the host session."""
+        if self._info is None:
+            msg = "Not attached to a session"
+            raise RuntimeError(msg)
+
+        env = {
+            **os.environ,
+            "WAYLAND_DISPLAY": self._info.wayland_socket,
+            "QT_QPA_PLATFORM": "wayland",
+            "QT_LINUX_ACCESSIBILITY_ALWAYS_ON": "1",
+            "QT_ACCESSIBILITY": "1",
+        }
+        if self._info.dbus_address:
+            env["DBUS_SESSION_BUS_ADDRESS"] = self._info.dbus_address
+        if extra_env:
+            env.update(extra_env)
+
+        app_name = Path(command[0]).stem if command else "unknown"
+        self._app_counter += 1
+        log_path = self._info.screenshot_dir / f"app_{app_name}_{self._app_counter}.log"
+        log_file = log_path.open("ab")
+
+        proc = subprocess.Popen(
+            command,
+            env=env,
+            stdout=log_file,
+            stderr=log_file,
+        )
+        log_file.close()
+
+        app_info = AppInfo(
+            pid=proc.pid,
+            command=" ".join(command),
+            log_path=log_path,
+            process=proc,
+        )
+        self._info.app_pid = proc.pid
+        self._info.apps[proc.pid] = app_info
+        return app_info
+
+    def read_app_log(self, pid: int, last_n_lines: int = 50) -> str:
+        """Read the log output of a launched app."""
+        if self._info is None:
+            msg = "Not attached to a session"
+            raise RuntimeError(msg)
+
+        app = self._info.apps.get(pid)
+        if app is None:
+            available = list(self._info.apps.keys())
+            msg = f"No app with PID {pid}. Available PIDs: {available}"
+            raise ValueError(msg)
+
+        if not app.log_path.exists():
+            return "(no log output yet)"
+
+        text = app.log_path.read_text(errors="replace")
+        if last_n_lines > 0:
+            lines = text.splitlines()
+            text = "\n".join(lines[-last_n_lines:])
+        return text or "(no log output yet)"
+
+    def stop(self) -> None:
+        """Detach from the host session and clean up temporary files.
+
+        Does NOT kill KDE or KWin — only removes the screenshot directory
+        created for this session.
+        """
+        if self._info is None:
+            return
+
+        if not self._keep_screenshots and self._info.screenshot_dir.exists():
+            shutil.rmtree(self._info.screenshot_dir, ignore_errors=True)
+
+        self._info = None
