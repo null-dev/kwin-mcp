@@ -63,13 +63,13 @@ class AutomationEngine:
 
     def _get_session(self) -> Session | HostSession:
         if self._session is None or not self._session.is_running:
-            msg = "No active session. Call session_start first."
+            msg = "No active session. Call session_attach first."
             raise RuntimeError(msg)
         return self._session
 
     def _get_input(self) -> InputBackend:
         if self._input is None:
-            msg = "No input backend. Call session_start first."
+            msg = "No input backend. Call session_attach first."
             raise RuntimeError(msg)
         return self._input
 
@@ -522,7 +522,7 @@ class AutomationEngine:
     def clipboard_get(self) -> str:
         """Read the current clipboard content in the isolated session."""
         if not self._clipboard_enabled:
-            return "Clipboard not enabled. Pass enable_clipboard=True to session_start."
+            return "Clipboard not enabled. Pass enable_clipboard=True to session_attach."
 
         env = self._session_env()
         try:
@@ -541,7 +541,7 @@ class AutomationEngine:
     def clipboard_set(self, text: str) -> str:
         """Set the clipboard content in the isolated session."""
         if not self._clipboard_enabled:
-            return "Clipboard not enabled. Pass enable_clipboard=True to session_start."
+            return "Clipboard not enabled. Pass enable_clipboard=True to session_attach."
 
         # Terminate previous wl-copy process (replaced by new content)
         if self._wl_copy_proc is not None:
