@@ -16,7 +16,7 @@ import time
 
 from kwin_mcp.input import InputBackend, MouseButton
 from kwin_mcp.screenshot import capture_frame_burst, capture_screenshot_to_file
-from kwin_mcp.session import HostSession, Session, SessionConfig
+from kwin_mcp.session import HostSession, Session
 
 # Install hints for external binaries
 _INSTALL_HINTS: dict[str, str] = {
@@ -162,56 +162,6 @@ class AutomationEngine:
         return "\n".join(lines)
 
     # ── Session management ────────────────────────────────────────────────
-
-    def session_start(
-        self,
-        app_command: str = "",
-        screen_width: int = 1920,
-        screen_height: int = 1080,
-        enable_clipboard: bool = False,
-        keep_screenshots: bool = False,
-        isolate_home: bool = False,
-        keep_home: bool = False,
-        env: dict[str, str] | None = None,
-    ) -> str:
-        """Start an isolated KWin Wayland session, optionally launching an app."""
-        if self._session is not None and self._session.is_running:
-            return "Session already running. Call session_stop first."
-
-        self._clipboard_enabled = enable_clipboard
-
-        self._session = Session()
-        config = SessionConfig(
-            screen_width=screen_width,
-            screen_height=screen_height,
-            enable_clipboard=enable_clipboard,
-            keep_screenshots=keep_screenshots,
-            isolate_home=isolate_home,
-            keep_home=keep_home,
-        )
-        info = self._session.start(config)
-
-        result = f"Session started. Wayland socket: {info.wayland_socket}"
-        if info.home_dir:
-            result += f"\nIsolated home: {info.home_dir}"
-
-        if app_command:
-            cmd = shlex.split(app_command)
-            app_info = self._session.launch_app(cmd, extra_env=env)
-            result += f"\nApp launched: {app_command} (PID={app_info.pid})"
-            result += f"\nApp log: {app_info.log_path}"
-
-        # Set up input backend via KWin's EIS D-Bus interface
-        time.sleep(0.5)
-        try:
-            self._input = InputBackend(info.dbus_address)
-        except RuntimeError:
-            self._input = None
-
-        input_status = "Input backend: KWin EIS" if self._input else "No input backend available"
-        result += f"\n{input_status}"
-
-        return result
 
     def session_stop(self) -> str:
         """Stop the active session and clean up."""

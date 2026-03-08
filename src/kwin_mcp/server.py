@@ -20,68 +20,6 @@ _engine = AutomationEngine()
 # ── Session management ──────────────────────────────────────────────────
 
 
-@mcp.tool()
-def session_start(
-    app_command: Annotated[
-        str,
-        Field(
-            description='Command to launch (e.g. "kcalc" or "/path/to/app --arg"). '
-            "Leave empty to start session without an app."
-        ),
-    ] = "",
-    screen_width: Annotated[int, Field(description="Virtual screen width in pixels.")] = 1920,
-    screen_height: Annotated[int, Field(description="Virtual screen height in pixels.")] = 1080,
-    enable_clipboard: Annotated[
-        bool,
-        Field(
-            description="Enable clipboard tools (wl-copy/wl-paste). Disabled by default "
-            "because wl-copy can hang in isolated sessions."
-        ),
-    ] = False,
-    keep_screenshots: Annotated[
-        bool,
-        Field(
-            description="Keep screenshot files after session_stop instead of deleting them. "
-            "Useful for debugging. Files must be cleaned up manually when enabled."
-        ),
-    ] = False,
-    isolate_home: Annotated[
-        bool,
-        Field(
-            description="Create a temporary HOME directory with isolated XDG directories "
-            "(config, data, cache, state). Prevents apps from reading/writing host user settings."
-        ),
-    ] = False,
-    keep_home: Annotated[
-        bool,
-        Field(
-            description="Keep the isolated home directory after session_stop "
-            "instead of deleting it. Only effective when isolate_home=true. "
-            "Files must be cleaned up manually when enabled."
-        ),
-    ] = False,
-    env: Annotated[
-        dict[str, str] | None,
-        Field(description="Extra environment variables to pass to the launched app."),
-    ] = None,
-) -> str:
-    """Start an isolated KWin Wayland session, optionally launching an app.
-
-    This must be called before any other tool. If a session is already running,
-    call session_stop first. Returns session status including the Wayland socket
-    path, launched app PID (if any), and input backend availability.
-    """
-    return _engine.session_start(
-        app_command=app_command,
-        screen_width=screen_width,
-        screen_height=screen_height,
-        enable_clipboard=enable_clipboard,
-        keep_screenshots=keep_screenshots,
-        isolate_home=isolate_home,
-        keep_home=keep_home,
-        env=env,
-    )
-
 
 @mcp.tool()
 def session_attach(
